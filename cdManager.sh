@@ -5,37 +5,54 @@
 #find
 #play
 
+#task: 添加Tracks时，自动添加Records 
+
 #*********************************************************
 
 insertRecordLine(){
-	echo $* >> Records.file
+	catalogNum=$(grep -c -h ^CD Records.file)
+	catalogNum=$(($catalogNum+1))
+	echo "CD${catalogNum} $*" >> Records.file
+	catalogNum=$(($catalogNum+1))
 	cat Records.file | sort > temp.file
 	mv temp.file Records.file
 	return
 }
 insertTrackLine(){
-	echo $* >> Tracks.file
+	cdName=$1
+	trackName=$2
+	trackNum=0
+	catalogNum=0
+	echo "	test $cdName"
+	recordLine=$(grep -h $cdName Records.file)
+	if [ $recordLine="" ] #if no found, add the CD to Records.file
+	then
+		insertRecordLine $cdName 
+	fi
+	recordLine=$(grep -h $cdName Records.file)
+	echo "	test $recordLine"
+	set $recordLine
+	catalogNum=$1
+
+	trackNum=$(grep -h -c ^$catalogNum Tracks.file)
+	echo "	test $trackNum"
+	trackNum=$(($trackNum+1))
+	echo "$catalogNum $trackNum $trackName" >> Tracks.file
 	cat Tracks.file | sort > temp.file
-	mv temp.file Records.file
+	mv temp.file Tracks.file
+	
 	return
 }
 insertRecords(){
-	echo "catalog title type composer"
-	read lineRecord
-	
-	#judge the input is vali
-	set $lineRecord
-	catalogCD=$1
-	titleCD=$2
-	typeCD=$3
-	composerCD=$4
+	echo "Title Type Composer"
+	read lineRecord	
 	
 	insertRecordLine $lineRecord #insert line to Record.file
 	return 
 }
 
 insertTracks(){
-	echo "catalog number track-name"
+	echo "CD-Name Track-Name"
 	read lineTrack
 
 	insertTrackLine $lineTrack	#insert line to Tracks.file
@@ -95,6 +112,7 @@ cat <<!UPDATE!
 5.alter records
 6.alter tracks
 !UPDATE!
+	echo -n ":"
 	read updateChoice
 
 	case "$updateChoice" in
@@ -125,8 +143,12 @@ return
 findCD() {
 	echo -n "Track-Name: "
 	read trackName
-	grep -h $trackName Tracks.file
-	
+ 	if grep -h [[:blank:]]$trackName$ Tracks.file 
+	then
+		:
+	else
+		echo "NO FOUND"
+	fi		
 	return
 }
 #************************************************************
@@ -142,7 +164,7 @@ playCD() {
 	playEn=true
 	echo -n "Track-Name: "
 	read trackName
-	echo "ctl+c to stop"
+	echo "(ctl+c to stop)"
 	grep -h $trackName Tracks.file
 	trap 'stop $trackName ' INT
 	
@@ -160,7 +182,6 @@ playCD() {
 # variable 
 playEn=true
 
-
 echo "Welcome to CDManager helper! Please choose which help you want to get."
 # main loop
 while true; do
@@ -171,7 +192,7 @@ cat <<!MENU!
 3.play
 4.exit
 !MENU!
-
+	echo -n ":"
 	read menuChoice
 
 	case "$menuChoice" in
