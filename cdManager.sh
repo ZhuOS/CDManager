@@ -10,32 +10,55 @@
 #*********************************************************
 
 insertRecordLine(){
-	catalogNum=$(grep -c -h ^CD Records.file)
-	catalogNum=$(($catalogNum+1))
-	echo "CD${catalogNum} $*" >> Records.file
-	catalogNum=$(($catalogNum+1))
-	cat Records.file | sort > temp.file
-	mv temp.file Records.file
-	return
+	cdName=$1
+	cdType=$2
+	cdComposer=$3
+
+	if grep -w -h "$cdName" Records.file; then
+		echo "The Record exists."
+		return
+	else
+		set $(wc -l Records.file) #number of lines in records.file
+		catalogNum=$1
+		catalogNum=$(($catalogNum+1))
+		echo "CD${catalogNum} $cdName $cdType $cdComposer" >> Records.file
+		
+		cat Records.file | sort > temp.file
+		mv temp.file Records.file
+		echo "Insert New CD $cdName Success."
+		return
+	fi
 }
 insertTrackLine(){
 	cdName=$1
 	trackName=$2
-	trackNum=0
-	catalogNum=0
-	echo "	test $cdName"
+
 	recordLine=$(grep -h $cdName Records.file)
-	if [ $recordLine="" ] #if no found, add the CD to Records.file
+
+	if [ -z "$recordLine" ]  #if no found, add the CD to Records.file
 	then
-		insertRecordLine $cdName 
+		insertRecordLine $cdName Type-xxx Composer-xxx
 	fi
 	recordLine=$(grep -h $cdName Records.file)
-	echo "	test $recordLine"
 	set $recordLine
-	catalogNum=$1
-
-	trackNum=$(grep -h -c ^$catalogNum Tracks.file)
-	echo "	test $trackNum"
+	catalogNum=$1 #目录编号CDXXX
+	
+	#判断是否存在该曲目
+	if grep -h "$trackName$" Tracks.file > temp.file; then	#是否存在曲目名
+		echo "	Track Name Exist."	
+		if grep -h $catalogNum temp.file; then	#是否存在唱片目录编号
+			echo "The Track Exist." 	#存在该曲目，退出.
+			return 									
+		fi
+	fi
+	rm -f temp.file
+	
+	echo "	test $catalogNum"
+	grep  "^$catalogNum" Tracks.file > temp_insert_track.file
+	set $(wc -l temp_insert_track.file)
+	rm -f temp_insert_track.file
+	
+	trackNum=$1 #曲目编号
 	trackNum=$(($trackNum+1))
 	echo "$catalogNum $trackNum $trackName" >> Tracks.file
 	cat Tracks.file | sort > temp.file
@@ -44,7 +67,7 @@ insertTrackLine(){
 	return
 }
 insertRecords(){
-	echo "Title Type Composer"
+	echo -e -n "CD-Name Type Composer\n:"
 	read lineRecord	
 	
 	insertRecordLine $lineRecord #insert line to Record.file
@@ -52,7 +75,7 @@ insertRecords(){
 }
 
 insertTracks(){
-	echo "CD-Name Track-Name"
+	echo -e -n "CD-Name Track-Name\n:"
 	read lineTrack
 
 	insertTrackLine $lineTrack	#insert line to Tracks.file
@@ -60,22 +83,37 @@ insertTracks(){
 }
 #****************************************************
 removeRecords(){
-	echo -n "Remove Catalog-Number: "
-	read catalogNum
-	grep -h -v "^${catalogNum}" Records.file > temp.file #remove the line with the head of xxx
-	mv temp.file Records.file 
-	grep -h -v "^${recordName}" Tracks.file > temp.file
-	mv temp.file Tracks.file
+	echo -n "Remove CD-Name: "
+	read cdName
+	if grep -w $cdName Records.file > /dev/null; then
+		cdLine=$(grep -h $cdName Records.file)
+		set $cdLine
 
-	return
+		grep -h -v -w "$cdName" Records.file > temp.file 
+		mv temp.file Records.file 
+		
+		grep -h -v -w $1 Tracks.file > temp.file
+		mv temp.file Tracks.file
+		echo "Remove CD Success"
+		return
+	else
+		echo "No Such CD"
+		return
+	fi
 }
 
 removeTracks(){
 	echo -n "Remove Track: " 
 	read trackName
-	grep -h -v [[:space:]]$trackName[[:space:]] Tracks.file > temp.file #need to be optimized
-	mv temp.file Tracks.file
-	return
+	if grep -w $trackName Tracks.file > /dev/null; then
+		grep -h -v -w $trackName Tracks.file > temp.file #need to be optimized
+		mv temp.file Tracks.file
+		echo "Remove Track Success"
+		return
+	else
+		echo "No Such Track"
+		return
+	fi
 }
 #******************************************************
 # test
@@ -84,20 +122,19 @@ alterRecords(){
 	read catalogNum
 	grep -h "^$catalogNum" Records.file
 	grep -v "^$catalogNum" Records.file > temp.file
-	mv temp.file Records.file
 	
 	echo -n "new Records infomation: "
 	read newCDInfo
-	echo $newCDInfo >> Records.file
+	echo $newCDInfo >> temp.file
 	
-	cat Records.file | sort | uniq > temp.file
-	mv temp.file Records.file
+	cat temp.file | sort | uniq > Records.file
+	rm -f temp.file
 	
 	return
 }
 # test
 alterTracks(){
-	echo -n "lterTracks"
+	echo -n "alterTracks"
 	return
 }
 #*********************************************************
@@ -117,18 +154,14 @@ cat <<!UPDATE!
 
 	case "$updateChoice" in
 	1 )	insertRecords
-		echo "insert Records success"
 		break;;
 	2 ) insertTracks
-		echo "insert Tracks success"
 		break;;
 	3 ) removeRecords
-		echo "remove Records success"
 		break;;
 	4 ) removeTracks
-		echo "remove Tracks success"
 		break;;
-	5 ) alterRecord
+	5 ) alterRecords
 		break;;
 	6 ) alterTracks
 		break;;
@@ -140,7 +173,7 @@ return
 
 }
 #***********************************************************
-findCD() {
+findCD() { #同曲目名，不同CD  Bug
 	echo -n "Track-Name: "
 	read trackName
  	if grep -h [[:blank:]]$trackName$ Tracks.file 
@@ -162,15 +195,26 @@ stop() {
 # play tracks
 playCD() {
 	playEn=true
-	echo -n "Track-Name: "
-	read trackName
-	echo "(ctl+c to stop)"
-	grep -h $trackName Tracks.file
-	trap 'stop $trackName ' INT
+	while true
+	do
+		echo -n "Track-Name: "
+		read trackName 					#当输入空格等控制符号时出现Bug
+		trackLine=$(grep -h "$trackName$" Tracks.file)
+		if [ -z "$trackLine" ]; then
+			echo "No Such Track."	
+			continue
+		else	
+			break
+		fi
+	done
+	echo "ctl+c to stop"
+	trap 'stop $trackLine' INT
+	
 	
 	while $playEn
 	do
-		echo "Play $trackName"
+		set $(date)
+		echo "|| $trackLine ($5)"
 		sleep 1
 	done
 

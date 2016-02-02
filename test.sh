@@ -1,5 +1,10 @@
 #!/bin/bash
-
+ff(){
+	aa=ss
+	
+}
+ff
+echo "$aa"
 
 
 flag=$(grep -h ^sssshile Records.file)
